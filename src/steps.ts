@@ -1,9 +1,11 @@
 import path from 'node:path'
 import { unitPath, type Node, type Unit } from './resolve'
+import type { Target } from './types'
 
 export type Step = {
   label: 'MODULE' | 'CXX' | 'LINK' | 'AR'
   name: string         // shown in progress: the source, or the linked output
+  group: string
   command: string[]
   outputs: string[]
   inputs: Step[]       // steps whose outputs this one reads
@@ -18,7 +20,8 @@ const update = async (file: string, text: string) => {
 const sign = (command: string[], digests: bigint[]) =>
   BigInt(Bun.hash(BigUint64Array.from([BigInt(Bun.hash(command.join('\0'))), ...digests])))
 
-export const plan = async (root: string, cache: string, nodes: Node[], units: Unit[], hash: (file: string) => bigint) => {
+export const plan = async (root: string, cache: string, nodes: Node[], units: Unit[], names: Map<Target, string>, hash: (file: string) => bigint) => {
+  const group = (node: Node) => names.get(node.target) ?? node.target.outfile ?? node.output
   const bmi = (unit: Unit) => path.join(cache, unit.hash, 'modules', `${unit.provides!.replace(':', '-')}.pcm`)
   const object = (unit: Unit) => unitPath(cache, unit, 'objects', '.o')
 
@@ -64,7 +67,8 @@ export const plan = async (root: string, cache: string, nodes: Node[], units: Un
       : ['clang++', ...flags, '-c', unit.file, ...output]
     const step: Step = {
       label: unit.provides ? 'MODULE' : 'CXX',
-      name: unit.file,
+      name: unit.provides == 'std' ? 'std' : unit.file,
+      group: group(unit.node),
       command,
       outputs: [object(unit), ...unit.provides ? [bmi(unit)] : []],
       inputs,
@@ -106,6 +110,7 @@ export const plan = async (root: string, cache: string, nodes: Node[], units: Un
     const step: Step = {
       label: isStatic ? 'AR' : 'LINK',
       name: node.output,
+      group: group(node),
       command,
       outputs: [node.output],
       inputs,

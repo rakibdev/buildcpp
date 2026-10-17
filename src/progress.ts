@@ -1,64 +1,87 @@
 import type { Step } from './steps'
 
 export const tty = Boolean(process.stdout.isTTY)
+const colored = tty && !process.env.NO_COLOR
 
-const paint = (code: number) => (text: string) => tty ? `\x1b[${code}m${text}\x1b[0m` : text
-const bold = paint(1)
-const dim = paint(2)
-const red = paint(31)
-const green = paint(32)
-const yellow = paint(33)
+const paint = (code: string) => (text: string) => colored ? `\x1b[${code}m${text}\x1b[0m` : text
+const bold = paint('1')
+const accent = paint('1;94')
+const bar = paint('94')
+const track = paint('34')
+const success = paint('1;96')
+const time = paint('96')
+const warning = paint('1;93')
+const error = paint('1;91')
+const muted = paint('38;5;248')
+const shown = 10
 
-const seconds = (ms: number) => `${(ms / 1000).toFixed(1)}s`
+const seconds = () => time(`${(performance.now() / 1000).toFixed(1)}s`)
 
-// On a terminal: finished links, warnings and failures scroll above one status line redrawn 10×/s.
-// Piped: one plain line per finished step.
+let drawn = false
+
+const clear = () => {
+  if (drawn) process.stdout.write('\r\x1b[2K')
+  drawn = false
+}
+
+const print = (text: string) => {
+  clear()
+  process.stdout.write(text.endsWith('\n') ? text : `${text}\n`)
+}
+
+const status = (text: string) => {
+  clear()
+  if (!tty) return console.log(text)
+  process.stdout.write(text)
+  drawn = true
+}
+
+export const scanning = (files: number) => status(`${accent('Scanning')} ${bold(String(files))} files…`)
+
 export const progress = (total: number) => {
-  const begin = performance.now()
-  let running = 0
+  const files = new Map<string, string[]>()
   let finished = 0
-  let drawn = false
+  let failed = ''
 
-  const counter = () => `[${String(finished).padStart(String(total).length)}/${total}]`
-
-  const clear = () => {
-    if (drawn) process.stdout.write('\r\x1b[2K')
-    drawn = false
+  const block = (group: string) => {
+    const list = files.get(group) ?? []
+    print([
+      success(`✓ ${group}`),
+      ...list.slice(0, shown).map(name => `  ${name}`),
+      ...list.length > shown ? [`  ${muted(`+${list.length - shown} more`)}`] : [],
+    ].join('\n'))
+    files.delete(group)
   }
 
   const draw = () => {
-    clear()
-    process.stdout.write(`${bold(counter())} ${dim(`${running} running · ${seconds(performance.now() - begin)}`)}`)
-    drawn = true
-  }
-
-  const print = (text: string) => {
-    clear()
-    process.stdout.write(text.endsWith('\n') ? text : `${text}\n`)
+    const width = 30
+    const filled = Math.round(width * finished / total)
+    status(`${accent('Building')} ${bar('━'.repeat(filled))}${track('─'.repeat(width - filled))} ${bold(`${finished}/${total}`)} · ${seconds()}`)
   }
 
   const timer = tty && total ? setInterval(draw, 100) : undefined
 
   return {
-    start: () => running++,
     finish: (step: Step, output: string) => {
-      running--
       finished++
-      if (output) print(`${yellow('⚠')} ${step.name}\n${output}`)
-      if (!tty) print(`${counter()} ${step.label} ${step.name}`)
-      else if (step.label == 'LINK' || step.label == 'AR') print(`${green('✓')} ${step.name}`)
+      if (output) print(`${warning('⚠')} ${success(step.group)} · ${bold(step.name)}\n${output}`)
+      if (step.label == 'LINK' || step.label == 'AR') return block(step.group)
+      const list = files.get(step.group)
+      if (list) list.push(step.name)
+      else files.set(step.group, [step.name])
     },
     fail: (step: Step, output: string) => {
-      running--
-      print(`${red('✗')} ${bold(step.name)}\n${output}`)
+      failed = step.group
+      print(`${error('✗')} ${success(step.group)} · ${bold(step.name)}\n${output}`)
     },
     end: (code: number) => {
       clearInterval(timer)
       clear()
-      const time = seconds(performance.now() - begin)
-      if (code == 130) console.log(`${red('✗')} interrupted after ${finished}/${total} steps`)
-      else if (code) console.log(`${red('✗')} build failed after ${finished}/${total} steps`)
-      else console.log(`${green('✓')} ${total ? `${total} steps in ${time}` : 'up to date'}`)
+      const done = bold(`${finished}/${total}`)
+      if (code == 130) return console.log(`${warning('Stopped')} · ${done} done, kept for next run`)
+      if (code) return console.log(`${error('Build failed')} in ${success(failed)} · ${done} done`)
+      for (const group of [...files.keys()]) block(group)
+      console.log(total ? `Built in ${seconds()}` : 'Up to date')
     },
   }
 }

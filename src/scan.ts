@@ -1,6 +1,7 @@
 import { $ } from 'bun'
 import path from 'node:path'
 import type { Cache, UnitEntry } from './cache'
+import { scanning } from './progress'
 import type { Unit } from './resolve'
 
 type Command = {
@@ -26,6 +27,7 @@ export const scan = async (root: string, cache: string, units: Unit[], previous:
   }
   if (!stale.length) return
 
+  scanning(stale.length)
   const database = path.join(cache, 'scan-database.json')
   await Bun.write(database, JSON.stringify(stale.map((unit, index) => ({
     directory: root,

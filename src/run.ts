@@ -95,7 +95,6 @@ export const run = async (root: string, all: Step[], wanted: Step[], previous: C
     const command = tty && step.command[0] == 'clang++' ? [...step.command, '-fcolor-diagnostics'] : step.command
     const child = Bun.spawn(command, { cwd: root, stdout: 'pipe', stderr: 'pipe' })
     children.add(child)
-    display.start()
     const [stdout, stderr, status] = await Promise.all([new Response(child.stdout).text(), new Response(child.stderr).text(), child.exited])
     children.delete(child)
     if (status) {
