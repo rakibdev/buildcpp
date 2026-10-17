@@ -1,0 +1,13 @@
+{
+  "name": "buildcpp",
+  "type": "module",
+  "exports": {
+    ".": "./src/api.ts"
+  },
+  "bin": {
+    "buildcpp": "src/main.ts"
+  },
+  "devDependencies": {
+    "@types/bun": "latest"
+  }
+}
