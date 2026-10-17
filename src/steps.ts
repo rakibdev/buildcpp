@@ -1,0 +1,120 @@
+import path from 'node:path'
+import { unitPath, type Node, type Unit } from './resolve'
+
+export type Step = {
+  label: 'MODULE' | 'CXX' | 'LINK' | 'AR'
+  name: string         // shown in progress: the source, or the linked output
+  command: string[]
+  outputs: string[]
+  inputs: Step[]       // steps whose outputs this one reads
+  signature: bigint    // hash of command + input contents; rerun when it differs from the cached one
+}
+
+const update = async (file: string, text: string) => {
+  const handle = Bun.file(file)
+  if (!(await handle.exists()) || await handle.text() != text) await Bun.write(file, text)
+}
+
+const sign = (command: string[], digests: bigint[]) =>
+  BigInt(Bun.hash(BigUint64Array.from([BigInt(Bun.hash(command.join('\0'))), ...digests])))
+
+export const plan = async (root: string, cache: string, nodes: Node[], units: Unit[], hash: (file: string) => bigint) => {
+  const bmi = (unit: Unit) => path.join(cache, unit.hash, 'modules', `${unit.provides!.replace(':', '-')}.pcm`)
+  const object = (unit: Unit) => unitPath(cache, unit, 'objects', '.o')
+
+  const modules = new Map<Node, Map<string, Unit>>()
+  for (const node of nodes) {
+    const visible = new Map<string, Unit>()
+    for (const unit of [...node.imports, ...node.units]) if (unit.provides) visible.set(unit.provides, unit)
+    if (node.std) visible.set('std', node.std)
+    modules.set(node, visible)
+  }
+
+  const imports = (unit: Unit) => {
+    const visible = modules.get(unit.node)!
+    const found = new Map<string, Unit>()
+    const visit = (names: string[]) => {
+      for (const name of names) {
+        if (found.has(name)) continue
+        const provider = visible.get(name)
+        if (!provider) throw new Error(`${unit.file}: unknown module '${name}'`)
+        found.set(name, provider)
+        visit(provider.requires)
+      }
+    }
+    visit(unit.requires)
+    return [...found]
+  }
+
+  const steps: Step[] = []
+  const commands = []
+  const compiles = new Map<Unit, Step>()
+  const active = new Set<Unit>()
+  const compile = (unit: Unit): Step => {
+    const existing = compiles.get(unit)
+    if (existing) return existing
+    if (active.has(unit)) throw new Error(`${unit.file}: module import cycle`)
+    active.add(unit)
+    const needed = imports(unit)
+    const inputs = needed.map(([, provider]) => compile(provider))
+    const flags = [...unit.flags, ...needed.map(([name, provider]) => `-fmodule-file=${name}=${bmi(provider)}`)]
+    const output = ['-o', object(unit)]
+    const command = unit.provides
+      ? ['clang++', ...flags, '-x', 'c++-module', '-c', unit.file, '-fmodules-reduced-bmi', `-fmodule-output=${bmi(unit)}`, ...output]
+      : ['clang++', ...flags, '-c', unit.file, ...output]
+    const step: Step = {
+      label: unit.provides ? 'MODULE' : 'CXX',
+      name: unit.file,
+      command,
+      outputs: [object(unit), ...unit.provides ? [bmi(unit)] : []],
+      inputs,
+      signature: sign(command, [unit.digest, ...inputs.map(input => input.signature)]),
+    }
+    commands.push({
+      directory: root,
+      file: unit.file,
+      arguments: ['clang++', ...flags, ...unit.provides ? ['-x', 'c++-module'] : [], '-c', unit.file, ...output],
+    })
+    active.delete(unit)
+    compiles.set(unit, step)
+    steps.push(step)
+    return step
+  }
+  for (const unit of units) if (!unit.bmiOnly || unit.provides) compile(unit)
+
+  const links = new Map<Node, Step>()
+  const linked = new Map<Node, Set<Unit>>()
+  for (const node of nodes) {
+    const inherited = new Set(node.deps.flatMap(dep => [...linked.get(dep)!]))
+    const own = [...node.units, ...node.std ? [node.std] : []].filter(unit => !inherited.has(unit))
+    linked.set(node, new Set(own))
+    if (node.target.prebuilt) continue
+    const outfile = node.target.outfile!
+    const objects = own.filter(unit => !unit.bmiOnly).map(compile)
+    const files = objects.map(step => step.outputs[0])
+    const libraries = node.deps.toReversed()
+    const flags = [...libraries.map(dep => dep.output), ...node.links]
+    const isStatic = outfile.endsWith('.a')
+    const command = isStatic
+      ? ['llvm-ar', 'rcs', node.output, ...files]
+      : outfile.endsWith('.so')
+        ? ['clang++', '-shared', '-o', node.output, ...files, ...flags, `-Wl,-soname,${path.basename(outfile)}`, '-Wl,-rpath,$ORIGIN']
+        : ['clang++', '-o', node.output, ...files, ...flags, '-Wl,-rpath,$ORIGIN']
+    const built = isStatic ? [] : libraries.filter(dep => !dep.target.prebuilt).map(dep => links.get(dep)!)
+    const prebuilt = isStatic ? [] : libraries.filter(dep => dep.target.prebuilt).map(dep => hash(dep.output))
+    const inputs = [...objects, ...built]
+    const step: Step = {
+      label: isStatic ? 'AR' : 'LINK',
+      name: node.output,
+      command,
+      outputs: [node.output],
+      inputs,
+      signature: sign(command, [...inputs.map(input => input.signature), ...prebuilt]),
+    }
+    links.set(node, step)
+    steps.push(step)
+  }
+
+  await update(path.join(root, 'compile_commands.json'), JSON.stringify(commands, undefined, 2) + '\n')
+  return { steps, links }
+}

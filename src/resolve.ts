@@ -5,6 +5,7 @@ import { stdSource } from './std'
 import type { Target } from './types'
 
 export type Unit = {
+  key: string            // `${hash}:${file}`
   file: string
   flags: string[]
   hash: string
@@ -12,6 +13,7 @@ export type Unit = {
   bmiOnly: boolean
   provides?: string
   requires: string[]
+  digest: bigint         // hash of the source and every header it includes, set by scan
 }
 
 export type Node = {
@@ -58,7 +60,7 @@ const expand = async (root: string, patterns: string[]) => {
   return [...files].sort()
 }
 
-export const unitPath = (cache: string, unit: Pick<Unit, 'hash' | 'file'>, folder: string, suffix = '') =>
+export const unitPath = (cache: string, unit: Unit, folder: string, suffix = '') =>
   path.join(cache, unit.hash, folder, (path.isAbsolute(unit.file) ? `external${unit.file}` : unit.file) + suffix)
 
 const languageFlags = (flags: string[]) => flags.filter(flag => !/^-[DIU]/.test(flag))
@@ -79,7 +81,7 @@ export const resolve = async (root: string, roots: Target[], modeDir: string) =>
     const key = `${hash}:${file}`
     const existing = units.get(key)
     if (existing) return existing
-    const created: Unit = { file, flags, hash, node, bmiOnly, requires: [] }
+    const created: Unit = { key, file, flags, hash, node, bmiOnly, requires: [], digest: 0n }
     units.set(key, created)
     return created
   }
