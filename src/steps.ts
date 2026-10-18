@@ -1,4 +1,5 @@
 import path from 'node:path'
+import { platform } from './platform'
 import { unitPath, type Node, type Unit } from './resolve'
 import type { Target } from './types'
 
@@ -101,9 +102,11 @@ export const plan = async (root: string, cache: string, nodes: Node[], units: Un
     const isStatic = outfile.endsWith('.a')
     const command = isStatic
       ? ['llvm-ar', 'rcs', node.output, ...files]
-      : outfile.endsWith('.so')
-        ? ['clang++', '-shared', '-o', node.output, ...files, ...flags, `-Wl,-soname,${path.basename(outfile)}`, '-Wl,-rpath,$ORIGIN']
-        : ['clang++', '-o', node.output, ...files, ...flags, '-Wl,-rpath,$ORIGIN']
+      : [
+          'clang++',
+          ...platform.shared.test(outfile) ? platform.library(path.basename(outfile)) : [],
+          '-o', node.output, ...files, ...flags, ...platform.link(), platform.rpath,
+        ]
     const built = isStatic ? [] : libraries.filter(dep => !dep.target.prebuilt).map(dep => links.get(dep)!)
     const prebuilt = isStatic ? [] : libraries.filter(dep => dep.target.prebuilt).map(dep => hash(dep.output))
     const inputs = [...objects, ...built]

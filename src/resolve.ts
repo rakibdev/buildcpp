@@ -1,6 +1,7 @@
 import { Glob, $ } from 'bun'
 import path from 'node:path'
 import { release } from './api'
+import { platform } from './platform'
 import { stdSource } from './std'
 import type { Target } from './types'
 
@@ -101,6 +102,7 @@ export const resolve = async (root: string, roots: Target[], modeDir: string) =>
     const flags = [
       `-std=${target.std ?? 'c++26'}`,
       '-fPIC',
+      ...platform.compile,
       ...(release ? ['-O2'] : ['-g', '-O0']),
       ...target.flags ?? [],
       ...defineFlags(target.defines ?? {}),
