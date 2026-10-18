@@ -21,7 +21,7 @@ if (unknown) throw new Error(`unknown target '${unknown}', expected one of: ${Ob
 
 const all = Object.values(config.targets)
 const targets = names.length ? names.map(name => config.targets[name]) : all
-const modeDir = path.join(config.outDir ?? 'build', api.release ? 'release' : 'dev')
+const modeDir = path.join('build', api.release ? 'release' : 'dev')
 const cache = path.join(modeDir, '.cache')
 const cacheFile = path.join(cache, 'cache.bin')
 
@@ -31,8 +31,8 @@ const hash = hasher(root, previous, next)
 const { nodes, units } = await resolve(root, all, modeDir)
 await scan(root, cache, units, previous, next, hash)
 const targetNames = new Map(Object.entries(config.targets).map(([name, target]) => [target, name]))
-const { steps, links } = await plan(root, cache, nodes, units, targetNames, hash)
-const wanted = nodes.filter(node => targets.includes(node.target) && !node.target.prebuilt).map(node => links.get(node)!)
+const { steps, links } = await plan(root, cache, nodes, units, targetNames)
+const wanted = nodes.filter(node => targets.includes(node.target)).flatMap(node => links.get(node) ?? [])   // header-only targets have no link step
 const save = () => writeCache(cacheFile, next)
 try {
   process.exitCode = await run(root, steps, wanted, previous, next, save)

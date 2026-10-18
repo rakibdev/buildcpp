@@ -20,13 +20,13 @@ export type Unit = {
 export type Node = {
   target: Target
   packages: string[]
-  flags: string[]
-  links: string[]
+  compileFlags: string[]
+  linkFlags: string[]    // pkg-config libs
   units: Unit[]
   imports: Unit[]
   std?: Unit
   deps: Node[]
-  output: string
+  output?: string        // undefined for header-only targets
 }
 
 const stdWarnings = ['-Wno-reserved-module-identifier', '-Wno-include-angled-in-module-purview', '-Wno-deprecated-declarations']
@@ -99,33 +99,34 @@ export const resolve = async (root: string, roots: Target[], modeDir: string) =>
     const own = (target.deps ?? []).filter(dep => typeof dep == 'string')
     const packages = [...new Set([...own, ...[...deps].flatMap(dep => dep.packages)])]
     const { cflags, libs } = await pkgConfig(packages)
-    const flags = [
-      `-std=${target.std ?? 'c++26'}`,
+    const includes = new Set([...target.includes ?? [], ...[...deps].flatMap(dep => dep.target.includes ?? [])])
+    const compileFlags = [
+      '-std=c++26',                       // target.flags come later, so a user -std wins
       '-fPIC',
       ...platform.compile,
       ...(release ? ['-O2'] : ['-g', '-O0']),
       ...target.flags ?? [],
       ...defineFlags(target.defines ?? {}),
-      ...(target.includes ?? []).map(include => `-I${include}`),
+      ...[...includes].map(include => `-I${include}`),
       ...cflags,
     ]
     const node: Node = {
       target,
       packages,
-      flags,
-      links: libs,
+      compileFlags,
+      linkFlags: libs,
       units: [],
       imports: [],
       deps: [...deps],
-      output: target.prebuilt ?? path.join(modeDir, target.outfile!),
+      output: target.outfile && path.join(modeDir, target.outfile),
     }
-    const prebuilt = Boolean(target.prebuilt)
-    node.units = (await expand(root, target.files ?? [])).map(file => unit(file, flags, node, prebuilt))
-    if (node.units.length) node.std = unit(std, [...languageFlags(flags), ...stdWarnings], node, prebuilt)
-    const language = languageFlags(flags).join('\0')
-    node.imports = node.deps.flatMap(dep => languageFlags(dep.flags).join('\0') == language
+    if (target.files?.length && !node.output) throw new Error(`target with files needs an outfile: ${target.files.join(', ')}`)
+    node.units = (await expand(root, target.files ?? [])).map(file => unit(file, compileFlags, node, false))
+    if (node.units.length) node.std = unit(std, [...languageFlags(compileFlags), ...stdWarnings], node, false)
+    const language = languageFlags(compileFlags).join('\0')
+    node.imports = node.deps.flatMap(dep => languageFlags(dep.compileFlags).join('\0') == language
       ? dep.units
-      : dep.units.map(source => unit(source.file, [...languageFlags(flags), ...sourceFlags(dep.flags)], node, true)))
+      : dep.units.map(source => unit(source.file, [...languageFlags(compileFlags), ...sourceFlags(dep.compileFlags)], node, true)))
     nodes.set(target, node)
     return node
   }

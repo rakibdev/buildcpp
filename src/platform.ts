@@ -16,16 +16,18 @@ const libcxx = () => path.join(clangDir(), '../lib/c++')
 
 export const platform = darwin
   ? {
-      shared: /\.dylib$/,
+      extension: '.dylib',
       compile: ['-stdlib=libc++'],
       link: () => ['-nostdlib++', path.join(libcxx(), 'libc++.a'), path.join(libcxx(), 'libc++abi.a')],
-      library: (name: string) => ['-dynamiclib', `-Wl,-install_name,@rpath/${name}`],
+      static: [],                                                   // no static libSystem on macOS. libc++ is already static via link()
+      shared: (name: string) => ['-dynamiclib', `-Wl,-install_name,@rpath/${name}`],
       rpath: '-Wl,-rpath,@loader_path',
     }
   : {
-      shared: /\.so$/,
+      extension: '.so',
       compile: [],
       link: () => [],
-      library: (name: string) => ['-shared', `-Wl,-soname,${name}`],
+      static: ['-static'],
+      shared: (name: string) => ['-shared', `-Wl,-soname,${name}`],
       rpath: '-Wl,-rpath,$ORIGIN',
     }
