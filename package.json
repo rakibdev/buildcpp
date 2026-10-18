@@ -1,6 +1,7 @@
 {
   "name": "buildcpp",
-  "version": "0.1.0",
+  "version": "0.1.1",
+  "description": "C++ build tool for clang with C++20 modules and import std, configured in TypeScript",
   "license": "MPL-2.0",
   "repository": "github:rakibdev/buildcpp",
   "type": "module",

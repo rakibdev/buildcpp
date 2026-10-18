@@ -1,6 +1,6 @@
 # Why buildcpp
 
-buildcpp (`~/Downloads/buildcpp`) is a small Bun/TS tool: it reads `build.ts`, plans every compile and link step, and runs them itself (ninja was dropped, see No ninja). This file records why it replaced xmake, why mcpp was rejected, and the design decisions that were tested and must not be reverted. Plan and implementation details: `buildcpp.md`.
+buildcpp is a small Bun/TS tool: it reads `build.ts`, plans every compile and link step, and runs them itself (ninja was dropped, see No ninja). This file records why it replaced xmake, why mcpp was rejected, and the design decisions that were tested and must not be reverted.
 
 ## Numbers (Oct 17 2026, 4 cores, clang 23.1.3)
 
