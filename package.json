@@ -1,11 +1,23 @@
 {
   "name": "buildcpp",
+  "version": "0.1.0",
+  "license": "MPL-2.0",
+  "repository": "github:rakibdev/buildcpp",
   "type": "module",
+  "types": "src/api.ts",
   "exports": {
     ".": "./src/api.ts"
   },
   "bin": {
-    "buildcpp": "src/main.ts"
+    "buildcpp": "dist/main.js"
+  },
+  "files": [
+    "dist",
+    "src/api.ts",
+    "src/types.ts"
+  ],
+  "scripts": {
+    "build": "bun build src/main.ts --target bun --minify --outfile dist/main.js"
   },
   "devDependencies": {
     "@types/bun": "latest"
