@@ -1,14 +1,9 @@
 {
   "name": "buildcpp",
   "version": "0.1.1",
-  "description": "C++ build tool for clang with C++20 modules and import std, configured in TypeScript",
+  "description": "C++ modules build tool, configured in TypeScript",
   "license": "MPL-2.0",
   "repository": "github:rakibdev/buildcpp",
-  "type": "module",
-  "types": "src/api.ts",
-  "exports": {
-    ".": "./src/api.ts"
-  },
   "bin": {
     "buildcpp": "dist/main.js"
   },
@@ -17,6 +12,11 @@
     "src/api.ts",
     "src/types.ts"
   ],
+  "type": "module",
+  "types": "src/api.ts",
+  "exports": {
+    ".": "./src/api.ts"
+  },
   "scripts": {
     "build": "bun build src/main.ts --target bun --minify --outfile dist/main.js"
   },
